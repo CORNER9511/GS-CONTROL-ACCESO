@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    /* ---------------------------------------------------
+       ESTILOS GENERALES
+    --------------------------------------------------- */
+
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #d5382b, #6f2616);
+      color: white;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .card {
+      background: white;
+      color: #333;
+      border-radius: 16px;
+      padding: 30px 40px;
+      margin: auto;
+      max-width: 480px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      text-align: left;
+    }
+
+    h1 {
+      text-align: center;
+      color: #c41e02;
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-weight: 600;
+      margin-top: 12px;
+    }
+
+    /* Inputs estándares */
+    input, select, textarea {
+      width: 100%;
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 5px;
+      border: 1px solid #ccc;
+      font-family: 'Poppins', sans-serif;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+
+    /* Video y foto */
+    video, canvas {
+      width: 100%;
+      border-radius: 12px;
+      margin-top: 15px;
+    }
+
+    /* Botones */
+    button {
+      background-color: #c41e02;
+      border: none;
+      color: white;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin: 12px 5px 0 5px;
+      font-size: 16px;
+      cursor: pointer;
+      min-width: 160px;
+      transition: background-color 0.3s;
+      display: inline-block;
+    }
+
+    button:hover {
+      background-color: #800f01;
+    }
+
+    #status {
+      margin-top: 10px;
+      font-weight: 600;
+      color: #333;
+      text-align: center;
+    }
+
+    /* Contenedor general para las notificaciones */
+    .toast-container {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+    }
+
+    /* Estilo base de cada notificación */
+    .toast {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #fff;
+      color: #333;
+      padding: 12px 18px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      font-weight: 600;
+      margin-top: 10px;
+      opacity: 0;
+      transform: translateY(20px);
+      animation: fadeInUp 0.4s forwards, fadeOut 0.4s 3.5s forwards;
+    }
+
+    /* Variantes de color */
+    .toast.success { border-left: 6px solid #28a745; }
+    .toast.warning { border-left: 6px solid #ffc107; }
+    .toast.error   { border-left: 6px solid #dc3545; }
+
+    /* Animaciones */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeOut {
+      to { opacity: 0; transform: translateY(20px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+
+    <!-- ==========================================================
+         Título del módulo
+    =========================================================== -->
+    <h1>Entrada de Contratista</h1>
+
+    <!-- ==========================================================
+         Campo de cédulas (permite varias separadas por coma o salto de línea)
+    =========================================================== -->
+    <label for="cedula">Cédula(s):</label>
+    <textarea id="cedula" rows="2" placeholder="Ejemplo: 12345, 67890"></textarea>
+
+    <!-- Campo de nombre -->
+    <label for="nombre">Nombre del Contratista:</label>
+    <input type="text" id="nombre" placeholder="Ingrese el nombre completo" />
+
+    <!-- Listado dinámico: Empresa -->
+    <label for="empresa">Empresa:</label>
+    <select id="empresa">
+      <option value="">Seleccione una empresa</option>
+    </select>
+
+    <!-- Listado dinámico: Sede -->
+    <label for="sede">Sede:</label>
+    <select id="sede">
+      <option value="">Seleccione una sede</option>
+    </select>
+
+    <!-- Listado dinámico: Operación -->
+    <label for="operacion">Operación:</label>
+    <select id="operacion">
+      <option value="">Seleccione una operación</option>
+    </select>
+
+    <!-- Comentario de entrada -->
+    <label for="obsEntrada">Comentario de entrada:</label>
+    <textarea id="obsEntrada" rows="2" placeholder="Escriba observación si aplica..."></textarea>
+
+    <!-- Vista previa de la cámara -->
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <!-- Botones principales -->
+    <div style="text-align:center;">
+      <button id="btnEntrada" onclick="takePhotoAndSave('Entrada')">Registrar Entrada</button>
+      <button onclick="goBack()">Volver al menú</button>
+    </div>
+
+    <!-- Mensaje de estado -->
+    <p id="status">Esperando acción...</p>
+  </div>
+
+  <!-- Contenedor para los mensajes tipo toast -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script>
+
+    /* ---------------------------------------------------
+       Variables globales
+    --------------------------------------------------- */
+    let stream;
+
+    const video       = document.getElementById("video");
+    const canvas      = document.getElementById("canvas");
+    const ctx         = canvas.getContext("2d");
+    const statusEl    = document.getElementById("status");
+
+    /* ---------------------------------------------------
+       FUNCIÓN: Iniciar cámara del dispositivo
+    --------------------------------------------------- */
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+      } catch (err) {
+        showToast("Error al acceder a la cámara", "error");
+      }
+    }
+
+    /* Detener cámara */
+    function stopCamera() {
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
+    }
+
+    startCamera();
+
+    /* ---------------------------------------------------
+       Cargar listas desde Google Apps Script
+       (Empresas, Sedes, Operaciones)
+    --------------------------------------------------- */
+    google.script.run
+      .withSuccessHandler(data => {
+
+        const sedeSel    = document.getElementById("sede");
+        const operSel    = document.getElementById("operacion");
+        const empresaSel = document.getElementById("empresa");
+
+        // Se limpian las opciones existentes
+        sedeSel.innerHTML    = '<option value="">Seleccione una sede</option>';
+        operSel.innerHTML    = '<option value="">Seleccione una operación</option>';
+        empresaSel.innerHTML = '<option value="">Seleccione una empresa</option>';
+
+        // Se agregan los valores desde la hoja Config
+        data.sedes.forEach(s       => sedeSel.add(new Option(s, s)));
+        data.operaciones.forEach(o => operSel.add(new Option(o, o)));
+        data.empresas.forEach(e     => empresaSel.add(new Option(e, e)));
+
+      })
+      .getSedeOperacionEmpresaList();
+
+    /* ---------------------------------------------------
+       Notificaciones tipo toast
+    --------------------------------------------------- */
+    function showToast(message, type = "success") {
+      const container = document.getElementById("toastContainer");
+      const toast = document.createElement("div");
+
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+
+      container.appendChild(toast);
+
+      // Remover después de terminar animaciones
+      setTimeout(() => toast.remove(), 4000);
+    }
+
+    /* ---------------------------------------------------
+       Capturar foto y registrar entrada del contratista
+    --------------------------------------------------- */
+    function takePhotoAndSave(type) {
+
+      const cedulas   = document.getElementById("cedula").value.trim();
+      const nombre    = document.getElementById("nombre").value.trim();
+      const empresa   = document.getElementById("empresa").value;
+      const sede      = document.getElementById("sede").value;
+      const operacion = document.getElementById("operacion").value;
+      const obsEntrada = document.getElementById("obsEntrada").value.trim();
+      const btnEntrada = document.getElementById("btnEntrada");
+
+      // Validación básica
+      if (!cedulas || !nombre || !empresa || !sede || !operacion) {
+        showToast("Complete todos los campos requeridos", "warning");
+        return;
+      }
+
+      const listaCedulas = cedulas.split(/[\s,]+/).filter(Boolean);
+
+      // Obtener ubicación del dispositivo
+      navigator.geolocation.getCurrentPosition(pos => {
+
+        // Capturar foto
+        canvas.width  = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const photo = canvas.toDataURL("image/jpeg");
+
+        statusEl.innerText = "Registrando entrada...";
+        btnEntrada.disabled = true;
+
+        // Procesar cada cédula
+        listaCedulas.forEach(id => {
+
+          const payload = {
+            cedula: id,
+            nombre: nombre,
+            type: type,
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            photoDataURL: photo,
+            empresa: empresa,
+            sede: sede,
+            operacion: operacion,
+            comentarios: obsEntrada
+          };
+
+          google.script.run
+            .withSuccessHandler(res => {
+              if (res.success) {
+                showToast(res.message, "success");
+                statusEl.innerText = res.message;
+
+                setTimeout(() => {
+                  stopCamera();
+                  goBack();
+                }, 2500);
+
+              } else {
+                showToast(res.message, "warning");
+                statusEl.innerText = res.message;
+                btnEntrada.disabled = false;
+              }
+            })
+            .withFailureHandler(err => {
+              showToast("Error: " + err.message, "error");
+              btnEntrada.disabled = false;
+            })
+            .saveContractorAttendance(payload);
+
+        });
+
+      }, () => {
+        showToast("No se pudo obtener la ubicación", "warning");
+      });
+
+    }
+
+    /* ---------------------------------------------------
+       Regresar al menú principal
+    --------------------------------------------------- */
+    function goBack() {
+      stopCamera();
+      google.script.run.withSuccessHandler(html => {
+        document.open();
+        document.write(html);
+        document.close();
+      }).loadView('ContractorMenu');
+    }
+
+  </script>
+</body>
+</html>

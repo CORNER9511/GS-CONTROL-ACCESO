@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+
+  <!-- ================================
+       ESTILOS VISUALES GENERALES
+  ================================= -->
+  <style>
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #d5382b, #6f2616);
+      color: white;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .card {
+      background: white;
+      color: #333;
+      border-radius: 16px;
+      padding: 30px 40px;
+      margin: auto;
+      max-width: 450px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      text-align: left;
+    }
+
+    h1 {
+      text-align: center;
+      color: #c41e02;
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-weight: 600;
+      margin-top: 12px;
+    }
+
+    select, textarea {
+      width: 100%;
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 5px;
+      border: 1px solid #ccc;
+      font-family: 'Poppins', sans-serif;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+
+    video, canvas {
+      width: 100%;
+      border-radius: 12px;
+      margin-top: 15px;
+    }
+
+    button {
+      background-color: #c41e02;
+      border: none;
+      color: white;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin: 12px 5px 0 5px;
+      font-size: 16px;
+      cursor: pointer;
+      min-width: 160px;
+      transition: background-color 0.3s;
+      display: inline-block;
+    }
+
+    button:hover {
+      background-color: #800f01;
+    }
+
+    #status {
+      margin-top: 10px;
+      font-weight: 600;
+      color: #333;
+      text-align: center;
+      white-space: pre-line;
+    }
+
+    /* Barra de progreso */
+    .progress-container {
+      width: 100%;
+      background-color: #ddd;
+      border-radius: 8px;
+      margin-top: 15px;
+      overflow: hidden;
+      height: 18px;
+      display: none;
+    }
+
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      background-color: #c41e02;
+      border-radius: 8px;
+      transition: width 0.4s ease;
+    }
+
+    /* Sistema de notificaciones tipo TOAST */
+    .toast-container {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+    }
+
+    .toast {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #fff;
+      color: #333;
+      padding: 12px 18px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      font-weight: 600;
+      margin-top: 10px;
+      opacity: 0;
+      transform: translateY(20px);
+      animation: fadeInUp 0.4s forwards, fadeOut 0.4s 3.5s forwards;
+    }
+
+    .toast.success { border-left: 6px solid #28a745; }
+    .toast.warning { border-left: 6px solid #ffc107; }
+    .toast.error   { border-left: 6px solid #dc3545; }
+
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeOut {
+      to { opacity: 0; transform: translateY(20px); }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ================================
+       TARJETA PRINCIPAL DEL REGISTRO
+  ================================= -->
+  <div class="card">
+    <h1>Registro de Entrada</h1>
+
+    <!-- Entrada de cédulas -->
+    <label for="cedulas">Cédulas (una por línea o separadas por coma):</label>
+    <textarea id="cedulas" rows="3" placeholder="Ejemplo: 12345, 67890"></textarea>
+
+    <!-- Selección de sede -->
+    <label for="sede">Sede:</label>
+    <select id="sede">
+      <option value="">Seleccione una sede</option>
+    </select>
+
+    <!-- Selección de operación -->
+    <label for="operacion">Operación:</label>
+    <select id="operacion">
+      <option value="">Seleccione una operación</option>
+    </select>
+
+    <!-- Comentarios -->
+    <label for="obsEntrada">Comentario de entrada:</label>
+    <textarea id="obsEntrada" rows="2" placeholder="Escriba observación si aplica..."></textarea>
+
+    <!-- Cámara -->
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <!-- Barra de progreso -->
+    <div class="progress-container" id="progressContainer">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+
+    <!-- Botones principales -->
+    <div style="text-align:center;">
+      <button id="btnEntrada" onclick="takePhotoAndSave('Entrada')">Registrar Entrada</button>
+      <button onclick="goBack()">Volver al menú</button>
+    </div>
+
+    <!-- Estado inferior -->
+    <p id="status">Esperando acción...</p>
+  </div>
+
+  <!-- Contenedor para mensajes toast -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- ================================
+       LÓGICA JAVASCRIPT PRINCIPAL
+  ================================= -->
+  <script>
+
+    let stream;
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const statusEl = document.getElementById("status");
+
+
+    /* =========================================================
+       INICIAR CÁMARA
+       ========================================================= */
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+
+      } catch (err) {
+        showToast("Error al acceder a la cámara", "error");
+      }
+    }
+
+
+    /* =========================================================
+       DETENER CÁMARA
+       ========================================================= */
+    function stopCamera() {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+    }
+
+
+    /* =========================================================
+       CARGAR LISTA DE SEDES Y OPERACIONES DESDE APPS SCRIPT
+       ========================================================= */
+    function loadSedesYOperaciones() {
+      google.script.run
+        .withSuccessHandler(data => {
+
+          const sedeSel = document.getElementById("sede");
+          const operSel = document.getElementById("operacion");
+
+          sedeSel.innerHTML = '<option value="">Seleccione una sede</option>';
+          operSel.innerHTML = '<option value="">Seleccione una operación</option>';
+
+          const info = typeof data === "string" ? JSON.parse(data) : data;
+
+          (info.sedes || []).forEach(s => sedeSel.add(new Option(s, s)));
+          (info.operaciones || []).forEach(o => operSel.add(new Option(o, o)));
+        })
+
+        .withFailureHandler(err => {
+          showToast("Error al cargar listas: " + err.message, "error");
+        })
+
+        .getSedeOperacionList();
+    }
+
+
+    /* =========================================================
+       MOSTRAR TOAST DE NOTIFICACIONES
+       ========================================================= */
+    function showToast(message, type = "success") {
+      const container = document.getElementById("toastContainer");
+      const toast = document.createElement("div");
+
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+
+      container.appendChild(toast);
+
+      setTimeout(() => toast.remove(), 4000);
+    }
+
+
+    /* =========================================================
+       ACTIVAR CÁMARA Y CARGAR DATOS INICIALES AL CARGAR LA PÁGINA
+       ========================================================= */
+    window.onload = () => {
+      startCamera();
+      loadSedesYOperaciones();
+    };
+
+
+    /* =========================================================
+       FUNCIÓN PRINCIPAL: REGISTRO DE ENTRADA (MÚLTIPLES CÉDULAS)
+       ========================================================= */
+    async function takePhotoAndSave(type) {
+
+      // Obtener valores del formulario
+      const cedulasInput = document.getElementById("cedulas").value.trim();
+      const sede = document.getElementById("sede").value;
+      const operacion = document.getElementById("operacion").value;
+      const obsEntrada = document.getElementById("obsEntrada").value.trim();
+
+      const btnEntrada = document.getElementById("btnEntrada");
+      const progressContainer = document.getElementById("progressContainer");
+      const progressBar = document.getElementById("progressBar");
+
+      // Validaciones
+      if (!cedulasInput || !sede || !operacion) {
+        showToast("Complete todos los campos.", "warning");
+        return;
+      }
+
+      // Convertir entrada a lista de cédulas
+      const listaCedulas = cedulasInput
+        .split(/[\n,]+/)
+        .map(c => c.trim())
+        .filter(c => c !== "");
+
+      if (listaCedulas.length === 0) {
+        showToast("Ingrese al menos una cédula válida.", "warning");
+        return;
+      }
+
+      // Capturar foto del video en el canvas
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const photo = canvas.toDataURL("image/jpeg");
+
+      // Obtener geolocalización
+      let pos;
+      try {
+        pos = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
+        });
+      } catch {
+        pos = { coords: { latitude: "", longitude: "" } };
+        showToast("No se pudo obtener ubicación.", "warning");
+      }
+
+      // Construir payload para Apps Script
+      const payloadList = listaCedulas.map(id => ({
+        user_id: id,
+        type: type,
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        photoDataURL: photo,
+        sede,
+        operacion,
+        obsEntrada
+      }));
+
+
+      /* ------------------------------------
+         MANEJO DE BARRA DE PROGRESO
+      ------------------------------------ */
+      progressContainer.style.display = "block";
+      progressBar.style.width = "0%";
+
+      statusEl.innerText = "Registrando entradas, por favor espere...";
+      btnEntrada.disabled = true;
+
+      // Animar barra mientras espera
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress = Math.min(progress + 5, 90);
+        progressBar.style.width = progress + "%";
+      }, 300);
+
+
+      /* ------------------------------------
+         ENVÍO DE REGISTROS A GOOGLE APPS SCRIPT
+      ------------------------------------ */
+      google.script.run
+
+        .withSuccessHandler(results => {
+          clearInterval(interval);
+          progressBar.style.width = "100%";
+
+          const errores = results.filter(r => !r.success);
+          const exitos = results.filter(r => r.success);
+
+          if (errores.length > 0) {
+
+            const fallidos = errores.map(e => e.user_id || e.message).join(", ");
+
+            statusEl.innerText =
+              `Registros exitosos: ${exitos.length}\n` +
+              `Errores: ${errores.length}\n` +
+              `Cédulas con error: ${fallidos}`;
+
+            showToast(`Se detectaron ${errores.length} errores. Corrija las cédulas con error.`, "warning");
+
+            btnEntrada.disabled = false;
+          }
+
+          else {
+            showToast(`${exitos.length} entradas registradas correctamente.`, "success");
+            statusEl.innerText = `Todos los registros (${exitos.length}) fueron exitosos.`;
+
+            setTimeout(() => {
+              stopCamera();
+              goBack();
+            }, 2000);
+          }
+        })
+
+        .withFailureHandler(err => {
+          clearInterval(interval);
+          progressBar.style.width = "0%";
+
+          showToast("Error: " + err.message, "error");
+          statusEl.innerText = "Error general: " + err.message;
+
+          btnEntrada.disabled = false;
+        })
+
+        .saveAttendanceBatch(payloadList);
+    }
+
+
+    /* =========================================================
+       VOLVER AL MENÚ ANTERIOR
+       ========================================================= */
+    function goBack() {
+      stopCamera();
+
+      google.script.run
+        .withSuccessHandler(html => {
+          document.open();
+          document.write(html);
+          document.close();
+        })
+        .loadView('EmployeeMenu');
+    }
+
+  </script>
+
+</body>
+</html>

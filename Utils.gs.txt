@@ -1,0 +1,89 @@
+/******************** UTILIDADES *********************/
+function getSheet(name) {
+  return SpreadsheetApp.openById(SS_ID).getSheetByName(name);
+}
+function getOrCreateFolderById(id) {
+  return DriveApp.getFolderById(id);
+}
+function getOrCreateFolder(name) {
+  const root = DriveApp.getRootFolder();
+  const folders = root.getFoldersByName(name);
+  return folders.hasNext() ? folders.next() : root.createFolder(name);
+}
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+/******************** CONFIGURACIÓN *********************/
+function getConfigValue(key) {
+  const sh = getSheet('Config');
+  if (!sh) return null;
+  const data = sh.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim().toUpperCase() === key.toUpperCase()) {
+      return String(data[i][1]).trim();
+    }
+  }
+  return null;
+}
+
+/******************** PARSER DE FECHA *********************/
+function parseDateTimeString(dateTimeStr) {
+  try {
+    const parts = dateTimeStr.split(' ');
+    const [day, month, year] = parts[0].split('/').map(Number);
+    const [hour, minute, second] = parts[1].split(':').map(Number);
+    return new Date(year, month - 1, day, hour, minute, second);
+  } catch {
+    return null;
+  }
+}
+
+/******************** BASE64 A BLOB *********************/
+function dataURLtoBlob_(dataURL, filename) {
+  const parts = dataURL.split(',');
+  const mime = parts[0].match(/:(.*?);/)[1];
+  const bytes = Utilities.base64Decode(parts[1]);
+  return Utilities.newBlob(bytes, mime, filename);
+}
+
+/******************** LOG *********************/
+function logAction(userEmail, action, details) {
+  const sh = getSheet('AuditLogs');
+  if (!sh) return;
+  sh.appendRow([new Date().toISOString(), userEmail, action, details]);
+}
+
+/******************** LISTAS DE CONFIG *********************/
+function getSedeOperacionList() {
+  const sh = getSheet("Config");
+  const data = sh.getDataRange().getValues();
+  const sedes = [];
+  const operaciones = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][3]) sedes.push(data[i][3]); // Columna D
+    if (data[i][5]) operaciones.push(data[i][5]); // Columna F
+  }
+  return { sedes: [...new Set(sedes)], operaciones: [...new Set(operaciones)] };
+}
+
+function getSedeOperacionEmpresaList() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const config = ss.getSheetByName("Config");
+  return {
+    sedes: config.getRange("D2:D").getValues().flat().filter(String),
+    operaciones: config.getRange("F2:F").getValues().flat().filter(String),
+    empresas: config.getRange("H2:H").getValues().flat().filter(String)
+  };
+}
+
+
+function getEmpresaList() {
+  const sh = getSheet("Config");
+  const data = sh.getDataRange().getValues();
+  const empresas = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][7]) empresas.push(data[i][7]); // Columna H
+  }
+  return [...new Set(empresas)];
+}

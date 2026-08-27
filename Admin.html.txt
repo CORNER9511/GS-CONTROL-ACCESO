@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+
+  <style>
+    /* ---------------------------------------------------------
+       ESTILOS GENERALES DE LA INTERFAZ
+    --------------------------------------------------------- */
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #d5382b, #6f2616);
+      color: white;
+      text-align: center;
+      padding: 40px;
+    }
+
+    .card {
+      background: white;
+      color: #333;
+      border-radius: 16px;
+      padding: 30px;
+      margin: auto;
+      max-width: 480px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      position: relative;
+    }
+
+    button {
+      display: block;
+      background-color: #c41e02;
+      border: none;
+      color: white;
+      padding: 14px;
+      border-radius: 10px;
+      margin: 15px auto;
+      font-size: 16px;
+      cursor: pointer;
+      width: 80%;
+      transition: background-color 0.3s;
+    }
+
+    button:hover {
+      background-color: #800f01;
+    }
+
+    /* Logo dinámico cargado desde Drive */
+    #Logo {
+      max-width: 80%;
+      border-radius: 2px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    input, select {
+      padding: 10px;
+      margin: 8px 0;
+      width: 90%;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-family: 'Poppins', sans-serif;
+    }
+
+    .section {
+      margin-top: 20px;
+      padding-top: 15px;
+      border-top: 1px solid #ddd;
+    }
+
+    /* Barra de estado inferior */
+    #statusBar {
+      background: #222;
+      color: #fff;
+      border-radius: 10px;
+      padding: 10px;
+      margin-top: 20px;
+      font-size: 14px;
+      text-align: center;
+      transition: background 0.3s;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="card">
+
+    <!-- Logo cargado desde Google Drive -->
+    <img id="Logo" alt="Logo">
+
+    <h1>Panel Administrador</h1>
+
+    <!-- Botones principales -->
+    <button onclick="toggleSection('empleadosSection')">Gestionar Empleados</button>
+    <button onclick="toggleSection('reportesSection')">Generar Reportes</button>
+    <button onclick="goBack()">Volver al inicio</button>
+
+    <!-- ---------------------------------------------------------
+         SECCIÓN DE GESTIÓN DE EMPLEADOS
+    --------------------------------------------------------- -->
+    <div id="empleadosSection" class="section" style="display:none;">
+      <h3>Gestión de Empleados</h3>
+
+      <input id="cedula" placeholder="Cédula" type="text">
+      <input id="nombre" placeholder="Nombre Completo" type="text">
+
+      <!-- Cargos cargados dinámicamente desde Google Sheets -->
+      <select id="cargo">
+        <option value="">Seleccione un cargo</option>
+      </select>
+
+      <button onclick="saveEmpleado()">Crear / Actualizar</button>
+      <button onclick="deleteEmpleado()">Eliminar</button>
+      <button onclick="loadEmpleados()">Ver Empleados</button>
+    </div>
+
+    <!-- ---------------------------------------------------------
+         SECCIÓN DE GENERACIÓN DE REPORTES
+    --------------------------------------------------------- -->
+    <div id="reportesSection" class="section" style="display:none;">
+      <h3>Generar Reporte</h3>
+
+      <label>Tipo de reporte:</label><br>
+
+      <!-- Selección del tipo de reporte -->
+      <select id="tipoReporte" onchange="toggleEmpleadoField()" style="width: 90%;">
+        <option value="">Escoja una opción</option>
+        <option value="empleados">Empleados</option>
+        <option value="contratistas">Contratistas</option>
+        <option value="porEmpleado">Por Empleado</option>
+      </select>
+
+      <!-- Selección de un empleado específico (se muestra solo si aplica) -->
+      <div id="empleadoSelectContainer" style="display:none;">
+        <label>Seleccione Empleado:</label><br>
+        <select id="nombreEmpleado"></select><br>
+      </div>
+
+      <!-- Rango de fechas -->
+      <label>Desde:</label>
+      <input type="date" id="fechaInicio"><br>
+
+      <label>Hasta:</label>
+      <input type="date" id="fechaFin"><br>
+
+      <button onclick="generarReporte()">Generar Reporte Excel</button>
+    </div>
+
+    <!-- Barra de estado -->
+    <div id="statusBar">Esperando acción...</div>
+  </div>
+
+  <script>
+
+    /* ---------------------------------------------------------
+       CARGA INICIAL DEL LOGO Y DATOS DESDE GOOGLE APPS SCRIPT
+    --------------------------------------------------------- */
+    document.addEventListener('DOMContentLoaded', function() {
+      const logo = document.getElementById('Logo');
+      const cachedLogo = localStorage.getItem('cachedLogo');
+
+      // Si ya se guardó en caché, mostrar inmediatamente
+      if (cachedLogo) {
+        logo.src = cachedLogo;
+        logo.style.opacity = 1;
+      }
+
+      // Cargar nueva versión desde Google Drive
+      google.script.run.withSuccessHandler(function(imageUrl) {
+        if (imageUrl) {
+          logo.src = imageUrl;
+          localStorage.setItem('cachedLogo', imageUrl);
+          logo.onload = () => { logo.style.opacity = 1; };
+        }
+      }).getDriveImage();
+
+      // Cargar listas dinámicas
+      loadCargos();
+      loadEmployeeNames();
+    });
+
+
+    /* ---------------------------------------------------------
+       FUNCIÓN PARA MOSTRAR MENSAJES EN LA BARRA DE ESTADO
+    --------------------------------------------------------- */
+    function setStatus(text, color = '#222') {
+      const statusBar = document.getElementById('statusBar');
+      statusBar.textContent = text;
+      statusBar.style.background = color;
+
+      // Regresar al estado base después de unos segundos
+      if (!text.includes('En proceso')) {
+        setTimeout(() => {
+          statusBar.textContent = 'Esperando acción...';
+          statusBar.style.background = '#222';
+        }, 4000);
+      }
+    }
+
+
+    /* ---------------------------------------------------------
+       MANEJO DE SECCIONES DEL PANEL
+    --------------------------------------------------------- */
+    function toggleSection(id) {
+      document.getElementById('empleadosSection').style.display = 'none';
+      document.getElementById('reportesSection').style.display = 'none';
+      document.getElementById(id).style.display = 'block';
+    }
+
+    function toggleEmpleadoField() {
+      const tipo = document.getElementById('tipoReporte').value;
+      document.getElementById('empleadoSelectContainer').style.display =
+        (tipo === 'porEmpleado') ? 'block' : 'none';
+    }
+
+
+    /* ---------------------------------------------------------
+       CARGA DE LISTAS DESDE GOOGLE SHEETS
+    --------------------------------------------------------- */
+    function loadCargos() {
+      google.script.run.withSuccessHandler(cargos => {
+        const select = document.getElementById('cargo');
+        select.innerHTML = '<option value="">Seleccione un cargo</option>';
+
+        cargos.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c;
+          opt.textContent = c;
+          select.appendChild(opt);
+        });
+      }).getCargosList();
+    }
+
+    function loadEmployeeNames() {
+      google.script.run.withSuccessHandler(names => {
+        const select = document.getElementById('nombreEmpleado');
+        select.innerHTML = '<option value="">Seleccione un empleado</option>';
+
+        names.forEach(n => {
+          const opt = document.createElement('option');
+          opt.value = n;
+          opt.textContent = n;
+          select.appendChild(opt);
+        });
+      }).getEmployeeNames();
+    }
+
+
+    /* ---------------------------------------------------------
+       CRUD DE EMPLEADOS
+    --------------------------------------------------------- */
+    function saveEmpleado() {
+      const cedula = document.getElementById('cedula').value.trim();
+      const nombre = document.getElementById('nombre').value.trim();
+      const cargo = document.getElementById('cargo').value.trim();
+
+      if (!cedula || !nombre || !cargo) {
+        return setStatus('Complete todos los campos.', '#c41e02');
+      }
+
+      setStatus('En proceso...', '#444');
+
+      google.script.run.withSuccessHandler(msg => {
+        setStatus(msg, '#007b00');
+      }).saveEmpleado({ cedula, nombre, cargo });
+    }
+
+    function deleteEmpleado() {
+      const cedula = document.getElementById('cedula').value.trim();
+      if (!cedula) {
+        return setStatus('Ingrese la cédula a eliminar.', '#c41e02');
+      }
+
+      setStatus('En proceso...', '#444');
+
+      google.script.run.withSuccessHandler(msg => {
+        setStatus(msg, '#007b00');
+      }).deleteEmpleado(cedula);
+    }
+
+
+    /* ---------------------------------------------------------
+       EXPORTACIÓN DE LISTA DE EMPLEADOS A EXCEL
+    --------------------------------------------------------- */
+    function loadEmpleados() {
+      setStatus('En proceso...', '#444');
+
+      google.script.run.withSuccessHandler(url => {
+        if (url) {
+          window.open(url, '_blank');
+          setStatus('Archivo generado correctamente.', '#007b00');
+        } else {
+          setStatus('No se encontraron empleados.', '#c41e02');
+        }
+      }).exportarEmpleados();
+    }
+
+
+    /* ----------------- GENERACIÓN DE REPORTES DE ASISTENCIA ----------------- */
+    function generarReporte() {
+      const tipoReporte = document.getElementById('tipoReporte').value;
+      const fechaInicio = document.getElementById('fechaInicio').value;
+      const fechaFin = document.getElementById('fechaFin').value;
+      const nombreEmpleado = document.getElementById('nombreEmpleado').value;
+
+      if (!tipoReporte) {
+        return setStatus('Seleccione un tipo de reporte.', '#c41e02');
+      }
+      if (!fechaInicio || !fechaFin) {
+        return setStatus('Seleccione un rango de fechas.', '#c41e02');
+      }
+
+      setStatus('En proceso...', '#444');
+
+      google.script.run.withSuccessHandler(url => {
+        if (url) {
+          window.open(url, '_blank');
+          setStatus('Reporte generado correctamente.', '#007b00');
+        } else {
+          setStatus('No se encontraron registros.', '#c41e02');
+        }
+      }).generarReporte({
+        tipoReporte,
+        fechaInicio,
+        fechaFin,
+        nombreEmpleado
+      });
+    }
+
+    /* ----------------- VOLVER A LA VISTA INICIAL------------------ */
+    function goBack() {
+      setStatus('En proceso...', '#444');
+      google.script.run.withSuccessHandler(html => {
+        document.open();
+        document.write(html);
+        document.close();
+      }).loadView('');
+    }
+
+  </script>
+</body>
+</html>

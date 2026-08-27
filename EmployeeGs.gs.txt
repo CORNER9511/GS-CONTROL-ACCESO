@@ -1,0 +1,234 @@
+/******************** CONFIG EMPLOYEE *********************/
+const EMP_COLS = {
+  CEDULA: 1,
+  NOMBRE: 2,
+  SEMANA: 3,
+  DIA: 4,
+  FECHA: 5,
+  HORA_ENTRADA: 6,
+  HORA_SALIDA: 7,
+  HORA_ALMUERZO: 8,
+  HORAS_TRABAJADAS: 9,
+  SEDE: 10,
+  OPERACION: 11,
+  FOTO_ENTRADA: 12,
+  LAT_ENTRADA: 13,
+  LNG_ENTRADA: 14,
+  FOTO_SALIDA: 15,
+  LAT_SALIDA: 16,
+  LNG_SALIDA: 17,
+  OBS_ENTRADA: 18,
+  OBS_SALIDA: 19
+};
+
+/******************** REGISTRO DE ASISTENCIA EMPLEADO (CORREGIDO) *********************/
+function saveAttendance(payload) {
+  if (!payload || !payload.user_id)
+    return { success: false, message: "❌ Cédula vacía o no válida." };
+
+  try {
+    // 🔹 Normalizar cédula (eliminar puntos, espacios y guiones)
+    const cleanCedula = String(payload.user_id).replace(/[.\s-]/g, "").trim();
+    if (!/^\d+$/.test(cleanCedula))
+      return { success: false, message: `❌ Cédula inválida: ${payload.user_id}` };
+
+    payload.user_id = cleanCedula;
+
+    const sh = getSheet("Attendance");
+    const empSh = getSheet("Employees");
+    if (!sh || !empSh) throw new Error("No se encontraron las hojas necesarias.");
+
+    const folderEntrada = getOrCreateFolderById(FOLDER_ENTRADA_ID);
+    const folderSalida = getOrCreateFolderById(FOLDER_SALIDA_ID);
+    const now = new Date();
+
+    const fechaStr = Utilities.formatDate(now, "America/Bogota", "yyyy-MM-dd");
+    const horaStr = Utilities.formatDate(now, "America/Bogota", "HH:mm:ss");
+
+    const diaSemana = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"][now.getDay()];
+    const semanaMes = Math.ceil(now.getDate() / 7);
+
+    const empData = empSh.getDataRange().getValues();
+    let nombreEmpleado = "";
+    for (let i = 1; i < empData.length; i++) {
+      const empCedula = String(empData[i][0]).replace(/[.\s-]/g, "").trim();
+      if (empCedula === cleanCedula) {
+        nombreEmpleado = empData[i][1];
+        break;
+      }
+    }
+
+    if (!nombreEmpleado)
+      return { success: false, message: `Empleado no encontrado: ${payload.user_id}` };
+
+    // 📸 Foto
+    let photoUrl = "";
+    if (payload.photoDataURL) {
+      const blobFile = dataURLtoBlob_(
+        payload.photoDataURL,
+        `${cleanCedula}_${payload.type}_${now.getTime()}.jpg`
+      );
+      const folder = (payload.type === "Entrada") ? folderEntrada : folderSalida;
+      const file = folder.createFile(blobFile);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      photoUrl = file.getUrl();
+    }
+
+    // 🔍 Buscar fila existente
+    const data = sh.getDataRange().getValues();
+    let foundRow = -1;
+    for (let r = 1; r < data.length; r++) {
+      const rowCedula = String(data[r][EMP_COLS.CEDULA - 1]).replace(/[.\s-]/g, "").trim();
+      let rowFecha = data[r][EMP_COLS.FECHA - 1];
+      if (rowFecha instanceof Date)
+        rowFecha = Utilities.formatDate(rowFecha, "America/Bogota", "yyyy-MM-dd");
+      else rowFecha = String(rowFecha).trim();
+
+      if (rowCedula === cleanCedula && rowFecha === fechaStr) {
+        foundRow = r + 1;
+        break;
+      }
+    }
+
+    /******************** 🚪 ENTRADA ********************/
+    if (payload.type === "Entrada") {
+      if (foundRow !== -1 && sh.getRange(foundRow, EMP_COLS.HORA_ENTRADA).getValue())
+        return { success: false, message: `Ya se registró ENTRADA hoy ${payload.user_id}.` };
+
+      const newRow = [
+        cleanCedula,
+        nombreEmpleado,
+        semanaMes,
+        diaSemana,
+        fechaStr,
+        horaStr, "", "1:00:00", "", // Entrada, Salida, Almuerzo, Horas trabajadas
+        payload.sede || "",
+        payload.operacion || "",
+        photoUrl,
+        payload.lat || "",
+        payload.lng || "",
+        "", "", "", // foto salida, lat salida, lng salida
+        payload.obsEntrada || "",
+        "" // obs salida
+      ];
+
+      if (foundRow === -1) {
+        sh.appendRow(newRow);
+        foundRow = sh.getLastRow();
+      } else {
+        sh.getRange(foundRow, 1, 1, newRow.length).setValues([newRow]);
+      }
+
+      sh.getRange(foundRow, EMP_COLS.HORA_ENTRADA).setNumberFormat("HH:mm:ss");
+      sh.getRange(foundRow, EMP_COLS.HORA_ALMUERZO).setNumberFormat("HH:mm:ss");
+
+      logAction(cleanCedula, "ATTENDANCE", `Entrada ${fechaStr}`);
+      return { success: true, message: `✅ Entrada registrada: ${nombreEmpleado}` };
+    }
+
+    /******************** 🚶 SALIDA ********************/
+    if (payload.type === "Salida") {
+      if (foundRow === -1)
+        return { success: false, message: `No hay entrada registrada hoy (${payload.user_id}).` };
+
+      const existingExit = sh.getRange(foundRow, EMP_COLS.HORA_SALIDA).getValue();
+      if (existingExit)
+        return { success: false, message: `Ya se registró la SALIDA hoy ${payload.user_id}.` };
+
+      const horaEntradaCell = sh.getRange(foundRow, EMP_COLS.HORA_ENTRADA).getValue();
+      const horaAlmuerzoCell = sh.getRange(foundRow, EMP_COLS.HORA_ALMUERZO).getValue() || "1:00:00";
+      if (!horaEntradaCell)
+        return { success: false, message: `No se encontró hora de entrada previa (${payload.user_id}).` };
+
+      const entradaSec = timeToSeconds(horaEntradaCell);
+      const salidaSec = timeToSeconds(horaStr);
+      const almuerzoSec = timeToSeconds(horaAlmuerzoCell);
+      let totalSeconds = salidaSec - entradaSec - almuerzoSec;
+      if (totalSeconds < 0) totalSeconds = 0;
+
+      const fractionOfDay = totalSeconds / 86400;
+
+      sh.getRange(foundRow, EMP_COLS.HORA_SALIDA).setValue(horaStr).setNumberFormat("HH:mm:ss");
+      sh.getRange(foundRow, EMP_COLS.HORAS_TRABAJADAS).setValue(fractionOfDay).setNumberFormat("HH:mm:ss");
+
+      if (photoUrl) sh.getRange(foundRow, EMP_COLS.FOTO_SALIDA).setValue(photoUrl);
+      sh.getRange(foundRow, EMP_COLS.LAT_SALIDA).setValue(payload.lat || "");
+      sh.getRange(foundRow, EMP_COLS.LNG_SALIDA).setValue(payload.lng || "");
+      if (payload.obsSalida) sh.getRange(foundRow, EMP_COLS.OBS_SALIDA).setValue(payload.obsSalida);
+
+      logAction(cleanCedula, "ATTENDANCE", `Salida ${fechaStr}`);
+      return { success: true, message: `✅ Salida registrada: ${nombreEmpleado}` };
+    }
+
+    return { success: false, message: "⚠️ Tipo de registro no reconocido." };
+  } catch (err) {
+    Logger.log("❌ Error en saveAttendance: " + err.message);
+    return { success: false, message: "Error: " + err.message };
+  }
+}
+
+/******************** REGISTRO MASIVO DE ASISTENCIA *********************/
+function saveAttendanceBatch(payloadList) {
+  if (!Array.isArray(payloadList) || payloadList.length === 0)
+    return [{ success: false, message: "❌ Lista de empleados vacía." }];
+
+  const results = [];
+  for (let payload of payloadList) {
+    try {
+      const res = saveAttendance(payload);
+      results.push(res);
+    } catch (e) {
+      results.push({ success: false, message: `❌ Error interno con ${payload.user_id}: ${e.message}` });
+    }
+  }
+  return results;
+}
+
+/******************** 📋 LISTAS DESPLEGABLES (SEDE / OPERACIÓN) *********************/
+function getSedeOperacionList() {
+  const configSh = getSheet("Config");
+  if (!configSh) return { sedes: [], operaciones: [] };
+
+  const data = configSh.getDataRange().getValues();
+
+  // Columna D = Sede (índice 3)
+  // Columna F = Operación (índice 5)
+  const sedes = [...new Set(data.slice(1).map(r => r[3]).filter(v => v && v.toString().trim() !== ""))];
+  const operaciones = [...new Set(data.slice(1).map(r => r[5]).filter(v => v && v.toString().trim() !== ""))];
+
+  return { sedes, operaciones };
+}
+
+/******************** 🔧 UTILIDADES *********************/
+// Convierte distintos tipos (Date | "HH:mm:ss" | "dd/MM/yyyy HH:mm:ss" | number) a segundos desde medianoche
+function timeToSeconds(val) {
+  if (val === null || val === undefined) return 0;
+
+  // Si es Date
+  if (val instanceof Date) {
+    return val.getHours() * 3600 + val.getMinutes() * 60 + val.getSeconds();
+  }
+
+  // Si es número lo interpretamos como segundos ya
+  if (typeof val === 'number') {
+    return Math.floor(val);
+  }
+
+  // Si es string: puede ser "HH:mm:ss" o "dd/MM/yyyy HH:mm:ss"
+  if (typeof val === 'string') {
+    const s = val.trim();
+    // Si viene con fecha y hora, tomar la parte hora al final
+    const parts = s.split(' ');
+    const timePart = parts[parts.length - 1];
+    const t = timePart.split(':').map(Number);
+    if (t.length === 3 && !isNaN(t[0]) && !isNaN(t[1]) && !isNaN(t[2])) {
+      return t[0] * 3600 + t[1] * 60 + t[2];
+    }
+    if (t.length === 2 && !isNaN(t[0]) && !isNaN(t[1])) {
+      return t[0] * 3600 + t[1] * 60;
+    }
+    return 0;
+  }
+
+  return 0;
+}

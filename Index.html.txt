@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+
+  <style>
+    /* ---------------------------------------------------------
+       ESTILOS GENERALES Y ESTRUCTURA PRINCIPAL
+    --------------------------------------------------------- */
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #d5382b, #6f2616);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    /* Tarjeta central del menú */
+    .card {
+      background: white;
+      color: #333;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      padding: 40px;
+      text-align: center;
+      width: 320px;
+      transition: all 0.3s ease;
+    }
+
+    /* Animación al pasar el mouse */
+    .card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 25px rgba(0,0,0,0.3);
+    }
+
+    /* Botones del menú */
+    button {
+      width: 100%;
+      margin-top: 10px;
+      background-color: #c41e02;
+      border: none;
+      color: white;
+      padding: 12px;
+      font-size: 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+
+    button:hover {
+      background-color: #800f01;
+    }
+
+    /* Logo cargado dinámicamente */
+    #Logo {
+      max-width: 80%;
+      border-radius: 2px;
+      transition: opacity 0.3s ease;
+      opacity: 0;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ---------------------------------------------------------
+       TARJETA PRINCIPAL DEL MENÚ
+  --------------------------------------------------------- -->
+  <div class="card">
+    <img id="Logo" alt="Logo">
+
+    <h1>Control de Asistencia</h1>
+    <p>Seleccione su tipo de acceso:</p>
+
+    <button onclick="goToView('employee')">Empleado</button>
+    <button onclick="goToView('contractor')">Contratista</button>
+    <button onclick="goToView('admin')">Administrador</button>
+  </div>
+
+
+  <!-- ---------------------------------------------------------
+       JAVASCRIPT DE CARGA DE LOGO Y NAVEGACIÓN
+  --------------------------------------------------------- -->
+  <script>
+
+    /* ---------------------------------------------------------
+       CARGAR LOGO DESDE GOOGLE DRIVE Y GUARDARLO EN CACHÉ
+    --------------------------------------------------------- */
+    document.addEventListener('DOMContentLoaded', function() {
+      const logo = document.getElementById('Logo');
+      const cachedLogo = localStorage.getItem('cachedLogo');
+
+      // Si existe en caché, mostrarlo de inmediato
+      if (cachedLogo) {
+        logo.src = cachedLogo;
+        logo.style.opacity = 1;
+      }
+
+      // Solicitar imagen actualizada desde Google Apps Script
+      google.script.run
+        .withSuccessHandler(function(imageUrl) {
+          if (imageUrl) {
+            logo.src = imageUrl;
+            localStorage.setItem('cachedLogo', imageUrl);
+            logo.onload = () => { logo.style.opacity = 1; };
+          }
+        })
+        .getDriveImage();
+    });
+
+
+    /* ---------------------------------------------------------
+       CAMBIAR DE VISTA DINÁMICAMENTE (Employee / Contractor / Admin)
+    --------------------------------------------------------- */
+    function goToView(view) {
+      // Actualiza la URL para permitir navegación hacia atrás
+      google.script.history.push({
+        state: { view: view },
+        location: '?view=' + view
+      });
+
+      // Carga la vista solicitada desde el servidor App Script
+      google.script.run
+        .withSuccessHandler(loadHtml)
+        .loadView(view);
+    }
+
+
+    /* Inserta el HTML recibido en toda la página */
+    function loadHtml(html) {
+      document.open();
+      document.write(html);
+      document.close();
+    }
+
+  </script>
+</body>
+</html>

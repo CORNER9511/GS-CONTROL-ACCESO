@@ -1,0 +1,74 @@
+/******************************************************
+ * CONTROL DE ASISTENCIA LABORAL
+ * Autor: Sebastian Felipe Caceres Cornelio
+ * Plataforma: Google Apps Script
+ ******************************************************/
+
+const SS_ID = '1L6ClPROL0h-gZuzs7v-OgzQ59i4oUZ66OU5D_vJNTNU';
+const FOLDER_ENTRADA_ID = '1OZsaiCqdmBDjYbloW0evN0_mWvLbrhK0';
+const FOLDER_SALIDA_ID = '1qUljRi3O9N5X3rP-vTBnCKWggFt5uFss';
+const IMAGE_ID = '1TQ-MbtspxF7f8lSE7BYE3GS8KO0XUT2Z';
+const FOLDER_ENTRADA_CONTRACTOR_ID = '1THy2UBuILpCRXtIGsjvpF1Fd8WUV5KMj';
+const FOLDER_SALIDA_CONTRACTOR_ID = '1xZ9iSxVchcqIyY3xWwy3gBke2LPz39rv';
+
+/******************** INTERFAZ *********************/
+function doGet(e) {
+  const view = e.parameter.view || '';
+
+  switch (view) {
+    case 'employee':
+      return HtmlService.createTemplateFromFile('EmployeeMenu').evaluate().setTitle('Menú Empleado');
+    case 'EmployeeEntrada':
+      return HtmlService.createTemplateFromFile('EmployeeEntrada').evaluate().setTitle('Entrada Empleado');
+    case 'EmployeeSalida':
+      return HtmlService.createTemplateFromFile('EmployeeSalida').evaluate().setTitle('Salida Empleado');
+    case 'contractor':
+      return HtmlService.createTemplateFromFile('ContractorMenu').evaluate().setTitle('Menú Contratista');
+    case 'ContractorEntrada':
+      return HtmlService.createTemplateFromFile('ContractorEntrada').evaluate().setTitle('Entrada Contratista');
+    case 'ContractorSalida':
+      return HtmlService.createTemplateFromFile('ContractorSalida').evaluate().setTitle('Salida Contratista');
+    case 'admin':
+      return HtmlService.createTemplateFromFile('Admin').evaluate().setTitle('Menú Administrador');
+    default:
+      return HtmlService.createTemplateFromFile('Index').evaluate().setTitle('Control de Asistencia');
+  }
+}
+
+/******************** CARGA DINÁMICA DE VISTAS *********************/
+function loadView(view) {
+  switch (view) {
+    case 'employee':
+      return HtmlService.createTemplateFromFile('EmployeeMenu').evaluate().getContent();
+    case 'EmployeeEntrada':
+      return HtmlService.createTemplateFromFile('EmployeeEntrada').evaluate().getContent();
+    case 'EmployeeSalida':
+      return HtmlService.createTemplateFromFile('EmployeeSalida').evaluate().getContent();
+    case 'contractor':
+      return HtmlService.createTemplateFromFile('ContractorMenu').evaluate().getContent();
+    case 'ContractorEntrada':
+      return HtmlService.createTemplateFromFile('ContractorEntrada').evaluate().getContent();
+    case 'ContractorSalida':
+      return HtmlService.createTemplateFromFile('ContractorSalida').evaluate().getContent();
+    case 'admin':
+      return HtmlService.createTemplateFromFile('Admin').evaluate().getContent();
+    default:
+      return HtmlService.createTemplateFromFile('Index').evaluate().getContent();
+  }
+}
+
+/******************** 📸 Imagen de Drive *********************/
+function getDriveImage() {
+  const file = DriveApp.getFileById(IMAGE_ID);
+  const blob = file.getBlob();
+  const contentType = blob.getContentType();
+  const bytes = Utilities.base64Encode(blob.getBytes());
+  return `data:${contentType};base64,${bytes}`;
+}
+
+function doGetImage() {
+  return HtmlService.createTemplateFromFile('Imagen')
+    .evaluate()
+    .setTitle('Imagen desde Drive');
+}
+

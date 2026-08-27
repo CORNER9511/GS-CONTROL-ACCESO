@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+
+  <style>
+    /* -----------------------------------------------
+       ESTILOS GENERALES DEL DOCUMENTO
+    ------------------------------------------------ */
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #d5382b, #6f2616); /* Fondo corporativo */
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    /* Tarjeta principal del panel */
+    .card {
+      background: white;
+      color: #333;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      padding: 40px;
+      text-align: center;
+      width: 320px;
+    }
+
+    /* Botones del panel */
+    button {
+      width: 100%;
+      margin-top: 10px;
+      background-color: #c41e02;
+      border: none;
+      color: white;
+      padding: 12px;
+      font-size: 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+
+    button:hover {
+      background-color: #800f01;
+    }
+
+    /* Logo que se carga dinámicamente desde Drive */
+    #Logo {
+      max-width: 80%;
+      border-radius: 2px;
+      transition: opacity 0.3s ease;
+      opacity: 0; /* Inicialmente invisible hasta que cargue */
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- -----------------------------------------------
+       TARJETA PRINCIPAL DEL PANEL DEL CONTRATISTA
+  --------------------------------------------------- -->
+  <div class="card">
+    <img id="Logo" alt="Logo">
+
+    <h1>Panel Contratista</h1>
+    <p>Seleccione una opción:</p>
+
+    <!-- Botones que navegan a otras vistas -->
+    <button onclick="goToView('ContractorEntrada')">Registrar Entrada</button>
+    <button onclick="goToView('ContractorSalida')">Registrar Salida</button>
+    <button onclick="goToView('')">Volver al Inicio</button>
+  </div>
+
+
+  <script>
+    /* -----------------------------------------------------
+       AL CARGAR LA PÁGINA: Manejo del logo desde Drive
+       - Primero revisa si hay un logo guardado en caché.
+       - Luego intenta obtener uno actualizado desde Drive.
+    ------------------------------------------------------- */
+    document.addEventListener('DOMContentLoaded', function() {
+      const logo = document.getElementById('Logo');
+      const cachedLogo = localStorage.getItem('cachedLogo');
+
+      // Mostrar logo guardado en caché inmediatamente (si existe)
+      if (cachedLogo) {
+        logo.src = cachedLogo;
+        logo.style.opacity = 1; // Mostrar logo suavemente
+      }
+
+      // Solicitar versión actualizada desde Google Drive
+      google.script.run
+        .withSuccessHandler(function(imageUrl) {
+          if (imageUrl) {
+            logo.src = imageUrl;
+            localStorage.setItem('cachedLogo', imageUrl); // Actualizar caché
+            logo.onload = () => { logo.style.opacity = 1; }; // Transición suave al aparecer
+          }
+        })
+        .getDriveImage();
+    });
+
+
+    /* -----------------------------------------------------
+       FUNCIÓN PARA NAVEGAR ENTRE VISTAS DEL WEB APP
+       - Cambia el estado de la URL
+       - Solicita al servidor la vista correspondiente
+    ------------------------------------------------------- */
+    function goToView(view) {
+      google.script.history.push({
+        state: { view: view },
+        location: '?view=' + view
+      });
+
+      google.script.run
+        .withSuccessHandler(loadHtml)
+        .loadView(view);
+    }
+
+    /* -----------------------------------------------------
+       FUNCIÓN: Cargar el HTML recibido desde Apps Script
+    ------------------------------------------------------- */
+    function loadHtml(html) {
+      document.open();
+      document.write(html);
+      document.close();
+    }
+  </script>
+
+</body>
+</html>

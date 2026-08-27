@@ -1,0 +1,240 @@
+/******************** CONFIGURACIÓN CONTRACTOR *********************/
+const CONTRACTOR_COLS = {
+  CEDULA: 1,
+  NOMBRE: 2,
+  EMPRESA: 3,
+  SEDE: 4,
+  OPERACION: 5,
+  SEMANA: 6,
+  DIA: 7,
+  FECHA: 8,
+  HORA_ENTRADA: 9,
+  HORA_SALIDA: 10,
+  HORA_ALMUERZO: 11,
+  HORAS_TRABAJADAS: 12,
+  FOTO_ENTRADA: 13,
+  LAT_ENTRADA: 14,
+  LNG_ENTRADA: 15,
+  FOTO_SALIDA: 16,
+  LAT_SALIDA: 17,
+  LNG_SALIDA: 18,
+  OBS_ENTRADA: 19,
+  OBS_SALIDA: 20
+};
+
+/******************** REGISTRO DE ASISTENCIA CONTRATISTA *********************/
+function saveContractorAttendance(payload) {
+  if (!payload || !payload.cedula) {
+    return { success: false, message: "El número de documento es obligatorio." };
+  }
+
+  const cedulas = String(payload.cedula)
+    .split(/[\s,;]+/)
+    .map(id => id.trim())
+    .filter(id => id !== '');
+
+  if (payload.type === 'Salida' && cedulas.length > 1) {
+    const resultados = [];
+    cedulas.forEach(id => {
+      const individualPayload = { ...payload, cedula: id };
+      const res = saveContractorAttendanceSingle(individualPayload);
+      resultados.push({ cedula: id, mensaje: res.message });
+    });
+    return {
+      success: true,
+      message: `Se procesaron ${resultados.length} contratistas.`,
+      detalles: resultados
+    };
+  }
+
+  return saveContractorAttendanceSingle(payload);
+}
+
+/******************** REGISTRO INDIVIDUAL CONTRATISTA *********************/
+function saveContractorAttendanceSingle(payload) {
+  if (!payload || !payload.cedula || !/^\d+$/.test(String(payload.cedula).trim())) {
+    return { success: false, message: `El número de documento no es válido.\nCédula con novedad: ${payload.cedula}` };
+  }
+
+  try {
+    const sh = getSheet('Contractor');
+    if (!sh) throw new Error('No se encontró la hoja "Contractor".');
+
+    const folderEntradaCon = getOrCreateFolderById(FOLDER_ENTRADA_CONTRACTOR_ID);
+    const folderSalidaCon = getOrCreateFolderById(FOLDER_SALIDA_CONTRACTOR_ID);
+    const now = new Date();
+
+    const fechaStr = Utilities.formatDate(now, 'America/Bogota', 'yyyy-MM-dd');
+    const horaStr = Utilities.formatDate(now, 'America/Bogota', 'HH:mm:ss');
+    const diaSemana = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"][now.getDay()];
+    const semanaMes = Math.ceil(now.getDate() / 7);
+
+    // 📸 Guardar foto
+    let photoUrl = '';
+    if (payload.photoDataURL) {
+      const blobFile = dataURLtoBlob_(
+        payload.photoDataURL,
+        `${payload.cedula}_${payload.type}_${now.getTime()}.jpg`
+      );
+      const folder = (payload.type === 'Entrada') ? folderEntradaCon : folderSalidaCon;
+      const file = folder.createFile(blobFile);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      photoUrl = file.getUrl();
+    }
+
+    // 🔍 Buscar registro existente
+    const data = sh.getDataRange().getValues();
+    let foundRow = -1;
+    for (let r = 1; r < data.length; r++) {
+      const rowCedula = String(data[r][CONTRACTOR_COLS.CEDULA - 1]).trim();
+      let rowFecha = data[r][CONTRACTOR_COLS.FECHA - 1];
+      if (rowFecha instanceof Date)
+        rowFecha = Utilities.formatDate(rowFecha, 'America/Bogota', 'yyyy-MM-dd');
+      else rowFecha = String(rowFecha).trim();
+
+      if (rowCedula === String(payload.cedula).trim() && rowFecha === fechaStr) {
+        foundRow = r + 1;
+        break;
+      }
+    }
+
+    // 🚪 ENTRADA
+    if (payload.type === 'Entrada') {
+      if (foundRow !== -1 && sh.getRange(foundRow, CONTRACTOR_COLS.HORA_ENTRADA).getValue()) {
+        return { success: false, message: `⚠️ Ya se registró la ENTRADA hoy.\nCédula con novedad: ${payload.cedula}` };
+      }
+
+      const newRow = [
+        payload.cedula,
+        payload.nombre || '',
+        payload.empresa || '',
+        payload.sede || '',
+        payload.operacion || '',
+        semanaMes,
+        diaSemana,
+        fechaStr,
+        horaStr,
+        '',
+        '1:00:00',
+        '',
+        photoUrl,
+        payload.lat || '',
+        payload.lng || '',
+        '', '', '',
+        payload.comentarios || '',
+        ''
+      ];
+
+      if (foundRow === -1) {
+        sh.appendRow(newRow);
+        foundRow = sh.getLastRow();
+      } else {
+        sh.getRange(foundRow, 1, 1, newRow.length).setValues([newRow]);
+      }
+
+      sh.getRange(foundRow, CONTRACTOR_COLS.HORA_ENTRADA).setNumberFormat("HH:mm:ss");
+      sh.getRange(foundRow, CONTRACTOR_COLS.HORA_ALMUERZO).setNumberFormat("HH:mm:ss");
+
+      logAction(payload.cedula, 'CONTRACTOR', `Entrada ${fechaStr}`);
+      return { success: true, message: "Entrada registrada correctamente." };
+    }
+
+    // 🚶 SALIDA
+    if (payload.type === 'Salida') {
+      if (foundRow === -1)
+        return { success: false, message: `No hay entrada registrada hoy.\nCédula con novedad: ${payload.cedula}` };
+
+      const existingExit = sh.getRange(foundRow, CONTRACTOR_COLS.HORA_SALIDA).getValue();
+      if (existingExit)
+        return { success: false, message: `Ya se registró la SALIDA hoy.\nCédula con novedad: ${payload.cedula}` };
+
+      const horaEntradaCell = sh.getRange(foundRow, CONTRACTOR_COLS.HORA_ENTRADA).getValue();
+      if (!horaEntradaCell)
+        return { success: false, message: `No se encontró hora de entrada previa.\nCédula con novedad: ${payload.cedula}` };
+
+      let horaAlmuerzoCell = sh.getRange(foundRow, CONTRACTOR_COLS.HORA_ALMUERZO).getValue() || "1:00:00";
+
+      const entradaSec = timeToSeconds(horaEntradaCell);
+      const salidaSec = timeToSeconds(horaStr);
+      const almuerzoSec = timeToSeconds(horaAlmuerzoCell);
+      let totalSeconds = salidaSec - entradaSec - almuerzoSec;
+      if (totalSeconds < 0) totalSeconds = 0;
+
+      const fractionOfDay = totalSeconds / 86400;
+
+      sh.getRange(foundRow, CONTRACTOR_COLS.HORA_SALIDA).setValue(horaStr).setNumberFormat("HH:mm:ss");
+      sh.getRange(foundRow, CONTRACTOR_COLS.HORAS_TRABAJADAS).setValue(fractionOfDay).setNumberFormat("HH:mm:ss");
+
+      if (photoUrl) sh.getRange(foundRow, CONTRACTOR_COLS.FOTO_SALIDA).setValue(photoUrl);
+      sh.getRange(foundRow, CONTRACTOR_COLS.LAT_SALIDA).setValue(payload.lat || '');
+      sh.getRange(foundRow, CONTRACTOR_COLS.LNG_SALIDA).setValue(payload.lng || '');
+      if (payload.comentarios) sh.getRange(foundRow, CONTRACTOR_COLS.OBS_SALIDA).setValue(payload.comentarios);
+
+      logAction(payload.cedula, 'CONTRACTOR', `Salida ${fechaStr}`);
+      return { success: true, message: "Salida registrada correctamente." };
+    }
+
+    return { success: false, message: "Tipo de registro no reconocido." };
+  } catch (err) {
+    Logger.log("❌ Error en saveContractorAttendanceSingle: " + err.message);
+    return { success: false, message: "Error: " + err.message };
+  }
+}
+
+
+/******************** 📋 FUNCIÓN PARA LISTAS DESPLEGABLES *********************/
+function getConfigLists() {
+  const sh = getSheet('Config');
+  if (!sh) return { empresas: [], sedes: [], operaciones: [] };
+
+  const data = sh.getDataRange().getValues();
+  const empresas = [...new Set(data.map(r => r[7]).filter(e => e && e.toString().trim() !== ''))];
+  const sedes = [...new Set(data.map(r => r[3]).filter(e => e && e.toString().trim() !== ''))];
+  const operaciones = [...new Set(data.map(r => r[5]).filter(e => e && e.toString().trim() !== ''))];
+
+  return { empresas, sedes, operaciones };
+}
+
+/******************** 🔧 FUNCIONES AUXILIARES *********************/
+// Convierte un valor (Date | "HH:mm:ss" | "dd/mm/yyyy HH:mm:ss" | número de segundos) a segundos desde medianoche
+function timeToSeconds(val) {
+  if (val === null || val === undefined) return 0;
+
+  // Si es Date
+  if (val instanceof Date) {
+    return val.getHours() * 3600 + val.getMinutes() * 60 + val.getSeconds();
+  }
+
+  // Si es número (lo interpretamos como segundos)
+  if (typeof val === 'number') {
+    return val;
+  }
+
+  // Si es string, puede venir como "HH:mm:ss" o "dd/mm/yyyy HH:mm:ss"
+  if (typeof val === 'string') {
+    val = val.trim();
+    // Si viene con espacio (fecha y hora), tomar la última parte (hora)
+    if (val.indexOf(' ') !== -1) {
+      const parts = val.split(' ');
+      val = parts[parts.length - 1];
+    }
+    const t = val.split(':').map(Number);
+    if (t.length === 3 && !isNaN(t[0]) && !isNaN(t[1]) && !isNaN(t[2])) {
+      return t[0] * 3600 + t[1] * 60 + t[2];
+    }
+    if (t.length === 2 && !isNaN(t[0]) && !isNaN(t[1])) {
+      return t[0] * 3600 + t[1] * 60;
+    }
+    // fallback
+    return 0;
+  }
+
+  return 0;
+}
+
+function parseDateTimeString(str) {
+  const [datePart, timePart] = str.split(" ");
+  const [day, month, year] = datePart.split("/").map(Number);
+  const [h, m, s] = timePart.split(":").map(Number);
+  return new Date(year, month - 1, day, h, m, s);
+}

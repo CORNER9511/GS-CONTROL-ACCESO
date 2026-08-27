@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+
+  <style>
+    /* Estilos generales de la interfaz */
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #d5382b, #6f2616);
+      color: white;
+      text-align: center;
+      padding: 20px;
+    }
+
+    /* Tarjeta central del formulario */
+    .card {
+      background: white;
+      color: #333;
+      border-radius: 16px;
+      padding: 30px 40px;
+      margin: auto;
+      max-width: 450px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      text-align: left;
+    }
+
+    /* Título */
+    h1 {
+      text-align: center;
+      color: #c41e02;
+      margin-bottom: 20px;
+    }
+
+    /* Etiquetas de los campos */
+    label {
+      display: block;
+      font-weight: 600;
+      margin-top: 12px;
+    }
+
+    /* Campos de texto */
+    textarea {
+      width: 100%;
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 5px;
+      border: 1px solid #ccc;
+      font-family: 'Poppins', sans-serif;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+
+    /* Vista previa de cámara */
+    video, canvas {
+      width: 100%;
+      border-radius: 12px;
+      margin-top: 15px;
+    }
+
+    /* Botones */
+    button {
+      background-color: #c41e02;
+      border: none;
+      color: white;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin: 12px 5px 0 5px;
+      font-size: 16px;
+      cursor: pointer;
+      min-width: 160px;
+      transition: background-color 0.3s;
+      display: inline-block;
+    }
+
+    button:hover {
+      background-color: #800f01;
+    }
+
+    /* Texto de estado del proceso */
+    #status {
+      margin-top: 15px;
+      font-weight: 600;
+      color: #333;
+      text-align: center;
+      white-space: pre-line;
+    }
+
+    /* Barra de progreso */
+    .progress-container {
+      width: 100%;
+      background-color: #eee;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-top: 15px;
+      display: none;
+    }
+
+    .progress-bar {
+      height: 10px;
+      width: 0%;
+      background-color: #c41e02;
+      transition: width 0.3s ease-in-out;
+    }
+
+    /* Contenedor de errores */
+    #errorLog {
+      margin-top: 1px;
+      padding: 1px;
+      display: none;
+      font-weight: 600;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="card">
+    <h1>Registro de Salida</h1>
+
+    <!-- Campo para ingresar cédulas -->
+    <label for="cedulas">Cédulas (una por línea o separadas por coma):</label>
+    <textarea id="cedulas" rows="3" placeholder="Ejemplo: 12345, 67890"></textarea>
+
+    <!-- Campo para ingresar comentario opcional -->
+    <label for="obsSalida">Comentario de salida:</label>
+    <textarea id="obsSalida" rows="2" placeholder="Escriba observación si aplica..."></textarea>
+
+    <!-- Cámara en vivo -->
+    <video id="video" autoplay playsinline></video>
+
+    <!-- Lienzo para capturar la foto -->
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <!-- Botones de acción -->
+    <div style="text-align:center;">
+      <button id="btnSalida" onclick="registrarSalida()">Registrar Salida</button>
+      <button onclick="goBack()">Volver al menú</button>
+    </div>
+
+    <!-- Barra de progreso -->
+    <div class="progress-container" id="progressContainer">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+
+    <!-- Estado del proceso -->
+    <p id="status">Esperando acción...</p>
+
+    <!-- Mensajes de error -->
+    <div id="errorLog"></div>
+  </div>
+
+  <script>
+    /* ------------------------------
+       VARIABLES GLOBALES
+    ------------------------------ */
+
+    let stream; // Flujo de la cámara
+
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    const statusEl = document.getElementById("status");
+    const progressContainer = document.getElementById("progressContainer");
+    const progressBar = document.getElementById("progressBar");
+    const errorLog = document.getElementById("errorLog");
+
+    /* ---------------------------------
+       INICIO Y DETENCIÓN DE LA CÁMARA
+    ---------------------------------- */
+
+    // Inicializa la cámara
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+      } catch {
+        statusEl.innerText = "No se pudo acceder a la cámara.";
+      }
+    }
+
+    // Detiene la cámara
+    function stopCamera() {
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
+    }
+
+    // Activar la cámara automáticamente
+    startCamera();
+
+    /* ---------------------------------
+       FUNCIÓN PRINCIPAL: REGISTRAR SALIDA
+    ---------------------------------- */
+    function registrarSalida() {
+
+      // Obtener valores ingresados
+      const cedulas = document.getElementById("cedulas").value.trim();
+      const obsSalida = document.getElementById("obsSalida").value.trim();
+      const btnSalida = document.getElementById("btnSalida");
+
+      // Limpiar errores anteriores
+      errorLog.style.display = "none";
+      errorLog.innerHTML = "";
+
+      // Validar que se ingresen cédulas
+      if (!cedulas) {
+        statusEl.innerText = "Debe ingresar al menos una cédula.";
+        return;
+      }
+
+      // Convertir cédulas separadas por espacio o coma en una lista
+      const listaCedulas = cedulas.split(/[\s,]+/).filter(Boolean);
+
+      // Mostrar barra de progreso
+      progressContainer.style.display = "block";
+      progressBar.style.width = "0%";
+
+      statusEl.innerText = "Registrando salidas...";
+      btnSalida.disabled = true;
+
+      /* -------------------------------------------
+         OBTENER UBICACIÓN Y CAPTURAR FOTO
+      -------------------------------------------- */
+      navigator.geolocation.getCurrentPosition(pos => {
+
+        // Ajustar lienzo al tamaño del video
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        // Tomar foto desde el video
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const photo = canvas.toDataURL("image/jpeg");
+
+        let procesadas = 0;
+        let exitosas = 0;
+        let errores = [];
+
+        /* -------------------------------------------
+           PROCESAR UNA A UNA LAS CÉDULAS
+        -------------------------------------------- */
+        listaCedulas.forEach(id => {
+
+          const payload = {
+            user_id: id,
+            type: "Salida",
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            photoDataURL: photo,
+            obsSalida: obsSalida
+          };
+
+          // Enviar datos a Apps Script
+          google.script.run
+            .withSuccessHandler(res => {
+
+              procesadas++;
+
+              if (res.success) {
+                exitosas++;
+              } else {
+                errores.push(res.message);
+              }
+
+              // Actualizar barra de progreso
+              const progreso = Math.round((procesadas / listaCedulas.length) * 100);
+              progressBar.style.width = progreso + "%";
+
+              // Si ya procesó todas las cédulas
+              if (procesadas === listaCedulas.length) {
+
+                btnSalida.disabled = false;
+                statusEl.innerText = `Registros exitosos: ${exitosas}`;
+
+                if (errores.length > 0) {
+                  errorLog.style.display = "block";
+                  errorLog.innerHTML = errores.join("<br>");
+                  statusEl.innerText += "\nAlgunas cédulas presentan errores.";
+                } else {
+                  statusEl.innerText += "\nTodos los registros fueron exitosos.";
+                  setTimeout(() => {
+                    stopCamera();
+                    goBack();
+                  }, 2000);
+                }
+              }
+            })
+
+            .withFailureHandler(err => {
+              procesadas++;
+
+              errores.push("Error en cédula " + id + ": " + err.message);
+
+              const progreso = Math.round((procesadas / listaCedulas.length) * 100);
+              progressBar.style.width = progreso + "%";
+
+              if (procesadas === listaCedulas.length) {
+                btnSalida.disabled = false;
+
+                statusEl.innerText =
+                  `Registros exitosos: ${exitosas}/${listaCedulas.length}\n` +
+                  "Se presentaron errores en el registro.";
+
+                errorLog.style.display = "block";
+                errorLog.innerHTML = errores.join("<br>");
+              }
+            })
+
+            .saveAttendance(payload);
+        });
+
+      }, () => {
+        statusEl.innerText = "No se pudo obtener la ubicación.";
+      });
+    }
+
+    /* ---------------------------------
+       Volver al menú principal
+    ---------------------------------- */
+    function goBack() {
+      stopCamera();
+      google.script.run.withSuccessHandler(html => {
+        document.open();
+        document.write(html);
+        document.close();
+      }).loadView('EmployeeMenu');
+    }
+  </script>
+</body>
+</html>

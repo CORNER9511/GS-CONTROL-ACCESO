@@ -1,0 +1,165 @@
+/******************** 📁 PANEL ADMIN ********************/
+
+function saveEmpleado(data) {
+  const sh = getSheet('Employees');
+  if (!sh) return 'No se encontró la hoja Employees.';
+  const dataAll = sh.getDataRange().getValues();
+
+  const row = dataAll.findIndex(r => String(r[0]).trim() === String(data.cedula).trim());
+  if (row !== -1) {
+    sh.getRange(row + 1, 2, 1, 2).setValues([[data.nombre, data.cargo]]);
+    return 'Empleado actualizado correctamente.';
+  } else {
+    sh.appendRow([data.cedula, data.nombre, data.cargo]);
+    return 'Empleado creado correctamente.';
+  }
+}
+
+function deleteEmpleado(cedula) {
+  const sh = getSheet('Employees');
+  if (!sh) return 'No se encontró la hoja Employees.';
+  const data = sh.getDataRange().getValues();
+  const row = data.findIndex(r => String(r[0]).trim() === String(cedula).trim());
+  if (row > 0) {
+    sh.deleteRow(row + 1);
+    return 'Empleado eliminado correctamente.';
+  }
+  return 'No se encontró la cédula en la base de empleados.';
+}
+
+function getEmpleados() {
+  const sh = getSheet('Employees');
+  if (!sh) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 3).getValues();
+}
+
+/******************** 📊 EXPORTAR EMPLEADOS ********************/
+function exportarEmpleados() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName('Employees');
+  if (!sh) return null;
+
+  const data = sh.getDataRange().getValues();
+  if (data.length < 2) return null;
+
+  const folderId = '1MZZJMwa4vMjrCJa3dVxwgoLoRTMNRqLQ';
+  const folder = DriveApp.getFolderById(folderId);
+
+  const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmmss');
+  const nombreArchivo = `Lista_Empleados_${timestamp}.xlsx`;
+
+  const tempSS = SpreadsheetApp.create(nombreArchivo);
+  const tempSh = tempSS.getSheets()[0];
+
+  tempSh.getRange(1, 1, data.length, data[0].length).setValues(data);
+
+  // 🎨 Estilo visual
+  const lastRow = data.length;
+  const lastCol = data[0].length;
+  const headerRange = tempSh.getRange(1, 1, 1, lastCol);
+  headerRange.setBackground('#cc0000');
+  headerRange.setFontColor('#ffffff');
+  headerRange.setFontWeight('bold');
+  headerRange.setHorizontalAlignment('center');
+  tempSh.getRange(1, 1, lastRow, lastCol).createFilter();
+  for (let c = 1; c <= lastCol; c++) tempSh.autoResizeColumn(c);
+  tempSh.setFrozenRows(1);
+
+  // 💾 Guardar y mover
+  const tempFile = DriveApp.getFileById(tempSS.getId());
+  folder.addFile(tempFile);
+  DriveApp.getRootFolder().removeFile(tempFile);
+
+  return tempFile.getUrl();
+}
+
+/******************** 📊 GENERAR REPORTES ********************/
+function generarReporte(params) {
+  const { tipoReporte, fechaInicio, fechaFin, nombreEmpleado } = params;
+  const folderId = '1MZZJMwa4vMjrCJa3dVxwgoLoRTMNRqLQ';
+  const folder = DriveApp.getFolderById(folderId);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  let hoja;
+  if (tipoReporte === 'empleados' || tipoReporte === 'porEmpleado') {
+    hoja = ss.getSheetByName('Attendance');
+  } else if (tipoReporte === 'contratistas') {
+    hoja = ss.getSheetByName('Contractor');
+  }
+
+  if (!hoja) return null;
+  const data = hoja.getDataRange().getValues();
+  if (data.length < 2) return null;
+
+  const headers = data[0];
+  const fechaIni = new Date(fechaInicio);
+  const fechaFinD = new Date(fechaFin);
+  fechaFinD.setDate(fechaFinD.getDate() + 1);
+
+  const colFecha = (tipoReporte === 'contratistas') ? 7 : 4;
+  const colNombre = 1;
+
+  const filtradas = data.filter((fila, i) => {
+    if (i === 0) return false;
+    const celdaFecha = fila[colFecha];
+    if (!celdaFecha) return false;
+    const fecha = (celdaFecha instanceof Date) ? celdaFecha : new Date(celdaFecha);
+
+    const dentroDeRango = fecha >= fechaIni && fecha < fechaFinD;
+    if (!dentroDeRango) return false;
+
+    if (tipoReporte === 'porEmpleado' && nombreEmpleado) {
+      return fila[colNombre] && fila[colNombre].toString().trim() === nombreEmpleado.trim();
+    }
+
+    return true;
+  });
+
+  if (filtradas.length === 0) return null;
+
+  const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmmss');
+  let nombreArchivo = `Asistencia_${tipoReporte}_${timestamp}.xlsx`;
+  if (tipoReporte === 'porEmpleado') nombreArchivo = `Asistencia_${nombreEmpleado}_${timestamp}.xlsx`;
+
+  const tempSS = SpreadsheetApp.create(nombreArchivo);
+  const tempSh = tempSS.getSheets()[0];
+
+  const headersToUse = (tipoReporte === 'contratistas') ? headers : headers.slice(0, 19);
+  const dataToUse = (tipoReporte === 'contratistas') ? filtradas : filtradas.map(r => r.slice(0, 19));
+
+  tempSh.getRange(1, 1, 1, headersToUse.length).setValues([headersToUse]);
+  tempSh.getRange(2, 1, dataToUse.length, headersToUse.length).setValues(dataToUse);
+
+  const lastCol = headersToUse.length;
+  const lastRow = dataToUse.length + 1;
+  const headerRange = tempSh.getRange(1, 1, 1, lastCol);
+  headerRange.setBackground('#cc0000');
+  headerRange.setFontColor('#ffffff');
+  headerRange.setFontWeight('bold');
+  headerRange.setHorizontalAlignment('center');
+  tempSh.getRange(1, 1, lastRow, lastCol).createFilter();
+  tempSh.setFrozenRows(1);
+  for (let c = 1; c <= lastCol; c++) tempSh.autoResizeColumn(c);
+
+  const tempFile = DriveApp.getFileById(tempSS.getId());
+  folder.addFile(tempFile);
+  DriveApp.getRootFolder().removeFile(tempFile);
+
+  return tempFile.getUrl();
+}
+
+/******************** ⚙️ CARGOS Y LISTA DE EMPLEADOS ********************/
+function getCargosList() {
+  const sh = getSheet('Config');
+  if (!sh) return [];
+  const data = sh.getRange(2, 10, sh.getLastRow() - 1, 1).getValues();
+  const cargos = [...new Set(data.flat().filter(c => c))];
+  return cargos;
+}
+
+function getEmployeeNames() {
+  const sh = getSheet('Employees');
+  if (!sh) return [];
+  const data = sh.getRange(2, 2, sh.getLastRow() - 1, 1).getValues();
+  return data.flat().filter(n => n);
+}

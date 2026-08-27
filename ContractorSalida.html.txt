@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+
+  <style>
+    /* -----------------------------------------------
+       ESTILOS GENERALES DEL DOCUMENTO
+    ------------------------------------------------ */
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #d5382b, #6f2616);
+      color: white;
+      text-align: center;
+      padding: 20px;
+    }
+
+    /* Tarjeta principal */
+    .card {
+      background: white;
+      color: #333;
+      border-radius: 16px;
+      padding: 30px 40px;
+      margin: auto;
+      max-width: 450px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      text-align: left;
+    }
+
+    h1 {
+      text-align: center;
+      color: #c41e02;
+      margin-bottom: 20px;
+    }
+
+    /* Campos de texto y selectores */
+    label {
+      display: block;
+      font-weight: 600;
+      margin-top: 12px;
+    }
+
+    select, textarea {
+      width: 100%;
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 5px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+      box-sizing: border-box;
+      font-family: 'Poppins', sans-serif;
+    }
+
+    /* Cámara y canvas */
+    video, canvas {
+      width: 100%;
+      border-radius: 12px;
+      margin-top: 15px;
+    }
+
+    /* Botones */
+    button {
+      background-color: #c41e02;
+      border: none;
+      color: white;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin: 12px 5px 0 5px;
+      font-size: 16px;
+      cursor: pointer;
+      min-width: 160px;
+      transition: background-color 0.3s;
+      display: inline-block;
+    }
+
+    button:hover {
+      background-color: #800f01;
+    }
+
+    /* Mensaje de estado */
+    #status { 
+      margin-top: 10px;
+      font-weight: 600;
+      color: #333;
+      text-align: center;
+    }
+
+    /* Sistema de notificaciones (toasts) */
+    .toast-container {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+    }
+
+    .toast {
+      display: flex;
+      align-items: center;
+      background: #fff;
+      color: #333;
+      padding: 12px 18px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      font-weight: 600;
+      margin-top: 10px;
+      opacity: 0;
+      transform: translateY(20px);
+      animation: fadeInUp 0.4s forwards, fadeOut 0.4s 3.5s forwards;
+    }
+
+    .toast.success  { border-left: 6px solid #28a745; }
+    .toast.warning  { border-left: 6px solid #ffc107; }
+    .toast.error    { border-left: 6px solid #dc3545; }
+
+    /* Animaciones */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeOut {
+      to { opacity: 0; transform: translateY(20px); }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- -----------------------------------------------
+       FORMULARIO PRINCIPAL DE REGISTRO DE SALIDA
+  --------------------------------------------------- -->
+  <div class="card">
+    <h1>Salida de Contratista</h1>
+
+    <!-- Ingreso de cédulas -->
+    <label for="cedula">Cédula:</label>
+    <textarea id="cedula" rows="2" placeholder="Ejemplo: 12345, 67890"></textarea>
+
+    <!-- Comentarios -->
+    <label for="obsSalida">Comentario de salida:</label>
+    <textarea id="obsSalida" rows="2" placeholder="Escriba observación si aplica..."></textarea>
+
+    <!-- Cámara -->
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <!-- Botones -->
+    <div style="text-align:center;">
+      <button id="btnSalida" onclick="takePhotoAndSave('Salida')">Registrar Salida</button>
+      <button onclick="goBack()">Volver al menú</button>
+    </div>
+
+    <p id="status">Esperando acción...</p>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+
+  <script>
+    /* -----------------------------------------------------
+       VARIABLES PRINCIPALES
+    ------------------------------------------------------- */
+    let stream;
+    const video     = document.getElementById("video");
+    const canvas    = document.getElementById("canvas");
+    const ctx       = canvas.getContext("2d");
+    const statusEl  = document.getElementById("status");
+
+    /* -----------------------------------------------------
+       INICIO DE LA CÁMARA DEL DISPOSITIVO
+    ------------------------------------------------------- */
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+      } catch (err) {
+        showToast("Error al acceder a la cámara.", "error");
+      }
+    }
+
+    /* Detener la cámara */
+    function stopCamera() {
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
+    }
+
+    /* Iniciar cámara al cargar la vista */
+    startCamera();
+
+    /* -----------------------------------------------------
+       SISTEMA DE NOTIFICACIONES EN PANTALLA (TOAST)
+    ------------------------------------------------------- */
+    function showToast(message, type = "success") {
+      const container = document.getElementById("toastContainer");
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 4000);
+    }
+
+    /* -----------------------------------------------------
+       CAPTURA DE FOTO + ENVÍO DE REGISTRO A APP SCRIPT
+    ------------------------------------------------------- */
+    function takePhotoAndSave(type) {
+
+      // Obtener valores del formulario
+      const cedulas = document.getElementById("cedula").value.trim();
+      const obsSalida = document.getElementById("obsSalida").value.trim();
+      const btnSalida = document.getElementById("btnSalida");
+
+      if (!cedulas) {
+        showToast("Ingrese al menos una cédula.", "warning");
+        return;
+      }
+
+      // Separar múltiples cédulas
+      const listaCedulas = cedulas.split(/[\s,]+/).filter(Boolean);
+
+      // Obtener ubicación GPS
+      navigator.geolocation.getCurrentPosition(pos => {
+
+        // Capturar la foto
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const photo = canvas.toDataURL("image/jpeg");
+
+        statusEl.innerText = "Registrando salida...";
+        btnSalida.disabled = true;
+
+        // Contadores de resultados
+        let exitos = 0;
+        let fallos = 0;
+        let cedulasError = [];
+        let completados = 0;
+
+        // Ejecutar registro por cada cédula
+        listaCedulas.forEach(id => {
+
+          const payload = {
+            cedula: id,
+            type: type,
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            photoDataURL: photo,
+            comentarios: obsSalida
+          };
+
+          google.script.run
+            .withSuccessHandler(res => {
+
+              if (res.success) {
+                exitos++;
+                showToast(id + ": salida registrada correctamente.", "success");
+              } else {
+                fallos++;
+                cedulasError.push(id);
+                showToast(id + ": " + res.message, "warning");
+              }
+
+              completados++;
+
+              // Evaluar solo cuando termine el proceso completo
+              if (completados === listaCedulas.length) {
+
+                btnSalida.disabled = false;
+
+                if (fallos === 0) {
+                  statusEl.innerText = exitos + " salidas registradas correctamente.";
+                  showToast(exitos + " salidas registradas correctamente.", "success");
+                  document.getElementById("cedula").value = "";
+
+                  setTimeout(() => {
+                    stopCamera();
+                    goBack();
+                  }, 2500);
+
+                } else {
+                  statusEl.innerText =
+                    exitos + " correctas, " + fallos + " con novedad.\n" +
+                    "Cédulas con error: " + cedulasError.join(", ");
+                  showToast(fallos + " cédulas con error.", "warning");
+                }
+              }
+            })
+
+            .withFailureHandler(err => {
+              fallos++;
+              cedulasError.push(id);
+              completados++;
+              showToast(id + ": " + err.message, "error");
+            })
+
+            .saveContractorAttendance(payload);
+        });
+      });
+    }
+
+    /* -----------------------------------------------------
+       VOLVER AL MENÚ PRINCIPAL DEL CONTRATISTA
+    ------------------------------------------------------- */
+    function goBack() {
+      stopCamera();
+      google.script.run.withSuccessHandler(html => {
+        document.open();
+        document.write(html);
+        document.close();
+      }).loadView('ContractorMenu');
+    }
+  </script>
+
+</body>
+</html>

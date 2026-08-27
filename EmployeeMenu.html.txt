@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+
+  <style>
+    /* ---------------------------------------------------
+       ESTILOS GENERALES DEL PROYECTO
+    ---------------------------------------------------- */
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #d5382b, #6f2616);
+      color: white;
+      text-align: center;
+      padding: 40px;
+      margin: 0;
+    }
+
+    /* Tarjeta principal del menú */
+    .card {
+      background: white;
+      color: #333;
+      border-radius: 16px;
+      padding: 30px;
+      margin: 40px auto;
+      max-width: 380px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      transition: all 0.3s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 25px rgba(0,0,0,0.3);
+    }
+
+    /* Botones del menú */
+    button {
+      display: block;
+      background-color: #c41e02;
+      border: none;
+      color: white;
+      padding: 14px;
+      border-radius: 10px;
+      margin: 15px auto;
+      font-size: 17px;
+      cursor: pointer;
+      width: 80%;
+      transition: background-color 0.3s ease;
+    }
+
+    button:hover {
+      background-color: #800f01;
+    }
+
+    /* Imagen del logo */
+    #Logo {
+      max-width: 80%;
+      border-radius: 4px;
+      transition: opacity 0.3s ease;
+      opacity: 0; /* Oculto hasta que cargue la imagen */
+      margin-bottom: 15px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ---------------------------------------------------
+       TARJETA PRINCIPAL DEL MENÚ DE EMPLEADO
+  ------------------------------------------------------ -->
+  <div class="card">
+    <img id="Logo" alt="Logo">
+
+    <h1>Panel Empleado</h1>
+    <p>Seleccione una opción:</p>
+
+    <button onclick="goTo('EmployeeEntrada')">Registrar Entrada</button>
+    <button onclick="goTo('EmployeeSalida')">Registrar Salida</button>
+    <button onclick="goBack()">Volver al inicio</button>
+  </div>
+
+  <!-- ---------------------------------------------------
+       SCRIPT PRINCIPAL DEL MENÚ
+  ------------------------------------------------------ -->
+  <script>
+
+    /* ---------------------------------------------------
+       CARGA DEL LOGO DESDE CACHÉ Y DESDE GOOGLE DRIVE
+    ---------------------------------------------------- */
+    document.addEventListener('DOMContentLoaded', function () {
+
+      const logo = document.getElementById('Logo');
+      const cachedLogo = localStorage.getItem('cachedLogo');
+
+      // Si hay logo guardado en caché, mostrarlo inmediatamente
+      if (cachedLogo) {
+        logo.src = cachedLogo;
+        logo.style.opacity = 1;
+      }
+
+      // Solicitar logo actualizado desde Apps Script
+      google.script.run
+        .withSuccessHandler(function (imageUrl) {
+
+          // Si Apps Script devuelve una imagen válida, actualizarla
+          if (imageUrl) {
+
+            logo.src = imageUrl;
+            localStorage.setItem('cachedLogo', imageUrl);
+
+            // Mostrar logo cuando ya haya cargado
+            logo.onload = function () {
+              logo.style.opacity = 1;
+            };
+          }
+        })
+        .getDriveImage(); // Función en Apps Script que obtiene la imagen desde Google Drive
+    });
+
+    /* ---------------------------------------------------
+       NAVEGACIÓN ENTRE VISTAS (HTMLs cargados desde Apps Script)
+    ---------------------------------------------------- */
+    function goTo(view) {
+      google.script.run
+        .withSuccessHandler(function (html) {
+          document.open();
+          document.write(html);
+          document.close();
+        })
+        .loadView(view); // Función Apps Script que devuelve el HTML solicitado
+    }
+
+    /* Volver a la vista inicial */
+    function goBack() {
+      google.script.run
+        .withSuccessHandler(function (html) {
+          document.open();
+          document.write(html);
+          document.close();
+        })
+        .loadView(''); // Vista por defecto (menú principal)
+    }
+
+  </script>
+</body>
+</html>
